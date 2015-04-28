@@ -1,0 +1,138 @@
+---
+title: "iHeartRadio"
+author: "Timothy J. Schmeier, PhD"
+date: "Saturday, April 25, 2015"
+output: html_document
+---
+
+This document was prepared for iHeartRadio and are my answers the take home data science assignment.
+
+Given 3 data tables the objective is to answer provided questions, compute statistics, and gain insight on iHeartRadio users. First, the tables are read into R.
+
+```{r,message=FALSE,warning=FALSE,results='hide'}
+files = list.files(getwd())
+files = files[grep('.+.tsv', files)]
+tablelist = vector('list')
+sapply(files, function(x) tablelist[[x]] <<- read.delim(x))
+artists = tablelist[[1]]; listens = tablelist[[2]]; users = tablelist[[3]] 
+```
+
+How many users exist in the data? First the number of unique users in each table is investigated and the union of users from both tables. If the profile_id from the user table appears in the listens table the user is Active and has recently listened to iHeartRadio. By assigning labels Active or Inactive to users we can determine how many users continue to use iHeartRadio and investigate if there is a difference in age between Active users and Inactive users. Of the 161803 unique users 153115 are Active users and 8688 are Inactive.
+
+
+```{r}
+length(unique(users$profile_id))
+length(unique(listens$profile_id))
+all.users = c(unique(users$profile_id), unique(listens$profile_id)) 
+tot.users = length(unique(all.users))
+tot.users
+
+
+users$status = ifelse(users$profile_id %in% listens$profile_id, 'Active', 'Inactive')
+table(users$status)
+```
+
+To determine if the mean age is different between the Active user group (35.9y) and Inactive user group (39.2y) we can perform a t-test. We reject the null hypothesis (that the ages in the two groups are equal) if p < 0.05. The t-test is significant and reveals there is a statistically significant difference in the mean age between groups. 
+
+Unfortunately, plotting the data reveals that the groups may be distributioned such that the strict assumptions necessary for an accurate t-test are not met (normally distributed with equal variance). In order to corroborate the t-test result a non-parametric randomization test was carried out. It confirms that there is a statistical difference in the mean age between Active and Inactive users.
+
+Interestingly, the plot also reveals an interesting interaction effect. Among Active users females dominate at younger ages but decay much more quickly than their male conterparts leaving a slight male majority of Active users at older ages. This rapid disengagement is not reflected in the Inactive population suggesting the data may be incomplete.
+
+```{r, warning=FALSE,message=FALSE}
+library(ggplot2)
+
+Active = users[users$status=='Active', 3]
+Inactive = users[users$status=='Inactive', 3]
+
+t.test(Active, Inactive)
+
+ggplot(users, aes(x=age,group=gender, fill=gender))+
+  geom_bar(position=position_dodge())+
+  ylab('Count')+
+  xlab('User Age')+
+  ggtitle('Users by Age and Gender')+
+  theme_bw()+
+  facet_wrap(~status)
+
+randomShuffle = function(Active, Inactive){
+  prop = length(Active)/(length(Active)+length(Inactive))
+  all = c(Active, Inactive)
+  all = all[sample(1:length(all), size = length(all), replace=FALSE)]
+  idx = sample(1:2, size = length(all), replace = TRUE, prob = c(prop, 1-prop))
+  diff = mean(all[idx == 2], na.rm=TRUE) - mean(all[idx == 1], na.rm = TRUE)
+  return(diff)  
+}
+
+agediff_dist = replicate(10000, randomShuffle(Active, Inactive))
+
+ggplot(data.frame(agediff_dist), aes(x=agediff_dist))+
+        geom_histogram()+
+        geom_vline(x=3.3, color='red')+
+        xlab('Between Group Mean Age Differences')+
+        ylab('Count')+
+        ggtitle('Randomization Distribution of Differences in Mean Age')+
+        theme_bw()
+
+p.value = agediff_dist[agediff_dist>3.3]/length(agediff_dist)
+p.value
+```
+
+To visualize user genre preferences by age and gender, it was necessary to join the user, listens, and artists tables together. This visualization focused only on Active users and filtered out Inactive users. This filtering may have introduced some level of survivorship bias into the data. Given the differing magnitude of group sizes the bias introduced (if it exists) is expected to be small. After filtering out Inactive users the structure of the missing data was explored. The missing values in genre prompted the possibility that they might be imputed based on a complete data point with the identical artist. Unfortunately the absences were systematic, none of the 24 bands had a single data point with the assigned genre making imputation impossible. For this reason incomplete data was removed.
+
+```{r,warning=FALSE,message=FALSE}
+library(VIM)
+
+radio = merge(listens, users, by.x = 'profile_id', by.y = 'profile_id', all.x = TRUE)
+radio = merge(radio, artists, by.x = 'artist_seed', by.y = 'artist_id', all.x=TRUE)
+
+radio = radio[radio$status=='Active',]
+aggr(radio)
+
+idx = which(is.na(radio$genre))
+miss_artist = unique(radio[idx, 8])
+length(miss_artist)
+miss_artist_idx = which(radio$artist_name %in% miss_artist)
+unique(radio[miss_artist_idx,9])
+
+radio = radio[complete.cases(radio),]
+```
+
+After removing missing data a heatmap was created, which is an intuitive way to summarize data in a matrix of data using a color gradient. First, to condense the data, the user ages were binned into 10 year intervals. To ensure trends in preferences among each age group were reflected accurately the number of tracks users listened to in each age group were scaled independantly of other age groups. This ensures the visualization is not dominated by the age groups with the largest number of users and that the trends in age groups with fewer users are not obscured. Zeros were imputed for genres which had no observed listeners in a given age set.
+
+As can be seen in the visualization Pop, Rock, Country, R&B, and Rap are most popular genres. Females favor Pop and R&B while males are inclined to listen to Rock and Rap more often. Both men and women increasingly listen to Religious music as they age which appears to be concurrent with a decrease in Rap music. Readers are cautioned from making strong conclusions based on this visualizaton about genre preferences at older ages as the number of users is limited and the data matrix becomes increasingly sparse which may make limited observations seem more or less important as the sample size decreases.
+
+
+```{r,warning=FALSE,message=FALSE}
+library(plyr)
+library(reshape2)
+
+agebin = cut(radio$age, seq(19,109,10), include.lowest=TRUE)
+
+segments = ddply(radio, .(gender, agebin, genre), summarize, totalTracks = sum(tracks_listened_to))
+segments$genre = with(segments, reorder(genre, totalTracks))
+
+segments2 = dcast(segments, agebin+gender ~ genre, fill=0)
+
+rescale = function(listens){
+  scaledlistens = sapply(listens, function(x) (10)*(x - min(listens))/(max(listens)-min(listens)))
+  return(scaledlistens)
+}
+
+gender = segments2$gender; agebin = segments2$agebin; segments2 = segments2[,-c(1:2)]
+
+segments3 = ddply(segments2, .(agebin,gender), rescale)
+standardized = melt(segments3, id=c('agebin','gender'))
+
+ggplot(standardized, aes(x=agebin,y=variable, fill=value))+
+  geom_tile()+
+  theme_bw()+
+  scale_fill_continuous(low='white', high='red', name='Preference')+
+  facet_wrap(~gender)+
+  theme(panel.background = element_rect(fill='black'), axis.text.x = element_text(angle=45, hjust=1),
+        panel.grid.major = element_blank(), panel.grid.minor = element_blank(), legend.position='None')+
+  xlab('')+
+  ylab('')+
+  ggtitle('Music Genre Preference by Gender and Decade')
+```
+
+
