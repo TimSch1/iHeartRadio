@@ -4,10 +4,13 @@ author: "Timothy J. Schmeier, PhD"
 date: "Saturday, April 25, 2015"
 output: html_document
 ---
+![iHeartRadio](iheartRadio.png)
 
 This document was prepared for iHeartRadio and are my answers the take home data science assignment.
 
-Given 3 data tables the objective is to answer provided questions, compute statistics, and gain insight on iHeartRadio users. First, the tables are read into R.
+This code is complete and can be found on my [github](http://www.github.com/TimSch1). 
+
+First, the tables are read into R.
 
 ```{r,message=FALSE,warning=FALSE,results='hide'}
 files = list.files(getwd())
@@ -36,7 +39,7 @@ To determine if the mean age is different between the Active user group (35.9y) 
 
 Unfortunately, plotting the data reveals that the groups may be distributioned such that the strict assumptions necessary for an accurate t-test are not met (normally distributed with equal variance). In order to corroborate the t-test result a non-parametric randomization test was carried out. It confirms that there is a statistical difference in the mean age between Active and Inactive users.
 
-Interestingly, the plot also reveals an interesting interaction effect. Among Active users females dominate at younger ages but decay much more quickly than their male conterparts leaving a slight male majority of Active users at older ages. This rapid disengagement is not reflected in the Inactive population suggesting the data may be incomplete.
+Interestingly, the plot also reveals an interesting interaction effect. Among Active users females dominate at younger ages but decay much more quickly than their male conterparts leaving a slight male majority of Active users at older ages (note the magnitude of the y-axis scale differs).
 
 ```{r, warning=FALSE,message=FALSE}
 library(ggplot2)
@@ -52,7 +55,8 @@ ggplot(users, aes(x=age,group=gender, fill=gender))+
   xlab('User Age')+
   ggtitle('Users by Age and Gender')+
   theme_bw()+
-  facet_wrap(~status)
+  facet_wrap(~status, scales='free')+
+  scale_fill_discrete(name='Gender')
 
 randomShuffle = function(Active, Inactive){
   prop = length(Active)/(length(Active)+length(Inactive))
@@ -70,7 +74,7 @@ ggplot(data.frame(agediff_dist), aes(x=agediff_dist))+
         geom_vline(x=3.3, color='red')+
         xlab('Between Group Mean Age Differences')+
         ylab('Count')+
-        ggtitle('Randomization Distribution of Differences in Mean Age')+
+        ggtitle('Randomization Test')+
         theme_bw()
 
 p.value = agediff_dist[agediff_dist>3.3]/length(agediff_dist)
@@ -99,7 +103,7 @@ radio = radio[complete.cases(radio),]
 
 After removing missing data a heatmap was created, which is an intuitive way to summarize data in a matrix of data using a color gradient. First, to condense the data, the user ages were binned into 10 year intervals. To ensure trends in preferences among each age group were reflected accurately the number of tracks users listened to in each age group were scaled independantly of other age groups. This ensures the visualization is not dominated by the age groups with the largest number of users and that the trends in age groups with fewer users are not obscured. Zeros were imputed for genres which had no observed listeners in a given age set.
 
-As can be seen in the visualization Pop, Rock, Country, R&B, and Rap are most popular genres. Females favor Pop and R&B while males are inclined to listen to Rock and Rap more often. Both men and women increasingly listen to Religious music as they age which appears to be concurrent with a decrease in Rap music. Readers are cautioned from making strong conclusions based on this visualizaton about genre preferences at older ages as the number of users is limited and the data matrix becomes increasingly sparse which may make limited observations seem more or less important as the sample size decreases.
+As can be seen in the visualization Pop, Rock, Country, R&B, and Rap are most popular genres. Females favor Pop and R&B while males are inclined to listen to Rock and Rap more often. Both men and women increasingly listen to Religious music as they age which appears to be concurrent with a decrease in Rap music. Readers are cautioned from making strong conclusions based on this visualizaton about genre preferences at older ages as the sample size is limited and the data matrix becomes increasingly sparse.
 
 
 ```{r,warning=FALSE,message=FALSE}
@@ -129,7 +133,7 @@ ggplot(standardized, aes(x=agebin,y=variable, fill=value))+
   scale_fill_continuous(low='white', high='red', name='Preference')+
   facet_wrap(~gender)+
   theme(panel.background = element_rect(fill='black'), axis.text.x = element_text(angle=45, hjust=1),
-        panel.grid.major = element_blank(), panel.grid.minor = element_blank(), legend.position='None')+
+        panel.grid.major = element_blank(), panel.grid.minor = element_blank())+
   xlab('')+
   ylab('')+
   ggtitle('Music Genre Preference by Gender and Decade')
